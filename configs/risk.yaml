@@ -1,0 +1,13 @@
+risk:
+  weights:
+    w1: 0.40
+    w2: 0.25
+    w3: 0.20
+    w4: 0.15
+  thresholds:
+    low: 0.30
+    medium: 0.60
+    high: 0.85
+  smoothing:
+    alpha: 0.35
+  hysteresis_margin: 0.05

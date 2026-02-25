@@ -15,6 +15,10 @@ data/raw/
 data/interim/
 data/processed/
 artifacts/
+docs/reports/*.csv
+
+# Local extraction scratch
+progress_extracted.txt
 
 # IDE
 .vscode/

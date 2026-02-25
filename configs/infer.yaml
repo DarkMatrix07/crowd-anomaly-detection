@@ -1,0 +1,5 @@
+inference:
+  clip_length: 8
+  clip_stride: 4
+  max_frames: 100
+  camera_id: cam-1
