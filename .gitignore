@@ -19,6 +19,9 @@ docs/reports/*.csv
 
 # Local extraction scratch
 progress_extracted.txt
+ShanghaiTech/
+shanghaitech_h5_empty/
+archive.zip
 
 # IDE
 .vscode/

@@ -1,6 +1,10 @@
 import subprocess
 import sys
 
+import cv2
+import numpy as np
+from scipy.io import savemat
+
 
 def test_train_baseline_script_runs_with_config() -> None:
     result = subprocess.run(
@@ -44,3 +48,119 @@ def test_run_ablations_script_runs() -> None:
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def _make_shanghaitech_like_sample(root, part, subset, idx, count):
+    image_dir = root / part / subset / "images"
+    gt_dir = root / part / subset / "ground-truth"
+    image_dir.mkdir(parents=True, exist_ok=True)
+    gt_dir.mkdir(parents=True, exist_ok=True)
+
+    image_path = image_dir / f"IMG_{idx}.jpg"
+    img = np.full((32, 32, 3), min(255, count), dtype=np.uint8)
+    cv2.imwrite(str(image_path), img)
+
+    gt_path = gt_dir / f"GT_IMG_{idx}.mat"
+    location = np.zeros((count, 2), dtype=np.float32)
+    number = np.array([[count]], dtype=np.uint16)
+    info = np.empty((1, 1), dtype=[("location", "O"), ("number", "O")])
+    info[0, 0] = (location, number)
+    image_info = np.empty((1, 1), dtype=object)
+    image_info[0, 0] = info
+    savemat(gt_path, {"image_info": image_info})
+
+
+def test_train_shanghaitech_script_runs(tmp_path) -> None:
+    dataset_root = tmp_path / "ShanghaiTech"
+    for part in ["part_A", "part_B"]:
+        for subset in ["train_data", "test_data"]:
+            for idx in range(1, 6):
+                _make_shanghaitech_like_sample(
+                    dataset_root,
+                    part=part,
+                    subset=subset,
+                    idx=idx,
+                    count=idx * 10 + (50 if part == "part_B" else 0),
+                )
+
+    metrics_out = tmp_path / "metrics.json"
+    manifest_out = tmp_path / "manifest.csv"
+    model_out = tmp_path / "model.joblib"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/train_shanghaitech_70_30.py",
+            "--dataset-root",
+            str(dataset_root),
+            "--epochs",
+            "1",
+            "--n-estimators",
+            "50",
+            "--metrics-out",
+            str(metrics_out),
+            "--manifest-out",
+            str(manifest_out),
+            "--model-out",
+            str(model_out),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert metrics_out.exists()
+    assert manifest_out.exists()
+    assert model_out.exists()
+
+
+def test_train_shanghaitech_cnn_script_runs(tmp_path) -> None:
+    dataset_root = tmp_path / "ShanghaiTech"
+    for part in ["part_A", "part_B"]:
+        for subset in ["train_data", "test_data"]:
+            for idx in range(1, 6):
+                _make_shanghaitech_like_sample(
+                    dataset_root,
+                    part=part,
+                    subset=subset,
+                    idx=idx,
+                    count=idx * 10 + (50 if part == "part_B" else 0),
+                )
+
+    metrics_out = tmp_path / "cnn_metrics.json"
+    manifest_out = tmp_path / "cnn_manifest.csv"
+    model_out = tmp_path / "cnn_model.pt"
+    preds_out = tmp_path / "cnn_predictions.csv"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/train_shanghaitech_cnn_70_30.py",
+            "--dataset-root",
+            str(dataset_root),
+            "--train-ratio",
+            "0.7",
+            "--model-name",
+            "tiny",
+            "--epochs",
+            "1",
+            "--batch-size",
+            "8",
+            "--num-workers",
+            "0",
+            "--metrics-out",
+            str(metrics_out),
+            "--manifest-out",
+            str(manifest_out),
+            "--model-out",
+            str(model_out),
+            "--predictions-out",
+            str(preds_out),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert metrics_out.exists()
+    assert manifest_out.exists()
+    assert model_out.exists()
+    assert preds_out.exists()
