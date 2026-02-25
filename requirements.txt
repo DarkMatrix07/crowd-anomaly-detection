@@ -7,4 +7,5 @@ torch>=2.2.0
 fastapi>=0.110.0
 uvicorn>=0.30.0
 httpx<0.28.0
+streamlit>=1.37.0
 pytest>=8.0.0

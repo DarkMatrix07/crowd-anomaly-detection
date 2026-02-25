@@ -27,3 +27,20 @@ def test_evaluate_model_script_runs() -> None:
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_run_ablations_script_runs() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_ablations.py",
+            "--out-csv",
+            "docs/reports/ablation-results.csv",
+            "--out-md",
+            "docs/reports/ablation-study.md",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
