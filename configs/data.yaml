@@ -1,0 +1,22 @@
+dataset:
+  name: shanghaitech
+  subset: part_a
+
+paths:
+  data_root: data/raw
+  metadata_csv: data/interim/metadata.csv
+
+preprocess:
+  target_fps: 10
+  frame_size: [224, 224]
+  clip_length_frames: 16
+  clip_stride_frames: 8
+  num_workers: 4
+  prefetch_factor: 2
+  augment:
+    enable: true
+    horizontal_flip_prob: 0.5
+    brightness_jitter: 0.2
+    contrast_jitter: 0.2
+    speed_min: 0.9
+    speed_max: 1.1

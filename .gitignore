@@ -1,0 +1,21 @@
+# Python cache and artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual envs
+.venv/
+venv/
+
+# Local environment
+.env
+
+# Data and outputs
+data/raw/
+data/interim/
+data/processed/
+artifacts/
+
+# IDE
+.vscode/
+.idea/
