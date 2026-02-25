@@ -1,0 +1,10 @@
+train:
+  epochs: 5
+  lr: 0.001
+  global_batch_size: 32
+  per_gpu_batch_size: 4
+  num_workers: 8
+  grad_accum_steps: 2
+  pin_memory: true
+  use_amp: true
+  distributed_backend: nccl

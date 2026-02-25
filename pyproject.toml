@@ -13,6 +13,8 @@ dependencies = [
     "pandas>=2.2.0",
     "opencv-python-headless>=4.10.0",
     "PyYAML>=6.0",
+    "scikit-learn>=1.5.0",
+    "torch>=2.2.0",
 ]
 
 [project.optional-dependencies]
