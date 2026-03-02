@@ -74,7 +74,7 @@ def test_train_anomaly_classifier_script_runs(tmp_path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/train_anomaly_classifier_70_30.py",
+            "scripts/train_anomaly_classifier.py",
             "--dataset-root",
             str(dataset_root),
             "--train-ratio",
@@ -128,7 +128,7 @@ def test_demo_anomaly_clip_script_runs(tmp_path) -> None:
     subprocess.run(
         [
             sys.executable,
-            "scripts/train_anomaly_classifier_70_30.py",
+            "scripts/train_anomaly_classifier.py",
             "--dataset-root",
             str(dataset_root),
             "--train-ratio",
@@ -157,7 +157,7 @@ def test_demo_anomaly_clip_script_runs(tmp_path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/demo_anomaly_clip.py",
+            "scripts/single_clip_demo.py",
             "--model-path",
             str(model_out),
             "--dataset-root",

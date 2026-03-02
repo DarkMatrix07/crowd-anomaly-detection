@@ -93,7 +93,7 @@ def load_anomaly_model_fn(
     if not path.exists():
         raise FileNotFoundError(
             f"Anomaly model not found at {path}.\n"
-            "Run scripts/train_windowed.py first to generate the artifact."
+            "Run scripts/train_production_model.py first to generate the artifact."
         )
     model = joblib.load(path)
 

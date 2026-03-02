@@ -22,7 +22,7 @@ Ablation study: [`docs/reports/ablation-study.md`](ablation-study.md)
 
 ```bash
 # Production model (RF, W=30)
-python scripts/train_windowed.py \
+python scripts/train_production_model.py \
   --test-ratio 0.20 --window-stride 5 --frame-stride-clips 5 \
   --max-train-videos 0 --n-estimators 300 --classifier rf \
   --model-out artifacts/models/shanghaitech_windowed_rf.joblib \
