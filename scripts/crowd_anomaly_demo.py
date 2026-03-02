@@ -1,12 +1,11 @@
 """Visual live demo — Streamlit app.
 
 Shows actual video frames with live anomaly scoring overlaid.
-Bypass RollingInferencePipeline to use raw model probabilities directly
-(the pipeline's risk formula dilutes the score to ~40% of the model output,
-keeping everything LOW — this demo shows the real model confidence).
+Pre-scores all frames before playback so the video runs smoothly
+without inference lag during replay.
 
 Run with:
-    python -m streamlit run scripts/demo_visual.py
+    python -m streamlit run scripts/crowd_anomaly_demo.py
 """
 from __future__ import annotations
 
@@ -34,7 +33,116 @@ st.set_page_config(
     page_title="Crowd Anomaly Monitor",
     page_icon="🚨",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
+
+# ---------------------------------------------------------------------------
+# Dark professional theme
+# ---------------------------------------------------------------------------
+st.markdown("""
+<style>
+/* Main background */
+.stApp { background-color: #0d1117; color: #e6edf3; }
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background-color: #161b22;
+    border-right: 1px solid #30363d;
+}
+
+/* Cards */
+.metric-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+}
+.metric-card .label {
+    font-size: 0.75rem;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+}
+.metric-card .value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #e6edf3;
+    line-height: 1;
+}
+
+/* Alert badge */
+.alert-badge {
+    border-radius: 12px;
+    padding: 18px;
+    text-align: center;
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    margin-bottom: 12px;
+    transition: background 0.3s ease;
+}
+.alert-LOW    { background: linear-gradient(135deg, #0d3321, #1a5c38); color: #3fb950; border: 1px solid #238636; }
+.alert-MEDIUM { background: linear-gradient(135deg, #3d2a00, #6d4900); color: #f0883e; border: 1px solid #9e6a03; }
+.alert-HIGH   { background: linear-gradient(135deg, #3d0000, #6d1010); color: #ff7b72; border: 1px solid #da3633;
+                animation: pulse 1s ease-in-out infinite; }
+
+@keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(218, 54, 51, 0.4); }
+    50%       { box-shadow: 0 0 0 10px rgba(218, 54, 51, 0); }
+}
+
+/* Score bar */
+.score-bar-wrap {
+    background: #21262d;
+    border-radius: 6px;
+    height: 10px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+.score-bar-fill {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.3s ease, background 0.3s ease;
+}
+
+/* Section headers */
+.section-header {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: 16px 0 8px 0;
+    border-bottom: 1px solid #21262d;
+    padding-bottom: 6px;
+}
+
+/* Alert table */
+[data-testid="stDataFrame"] { border: 1px solid #30363d; border-radius: 8px; }
+
+/* Title */
+h1 { color: #e6edf3 !important; font-weight: 700 !important; }
+
+/* Buttons */
+.stButton button {
+    background: linear-gradient(135deg, #238636, #2ea043) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    padding: 12px !important;
+    transition: opacity 0.2s !important;
+}
+.stButton button:hover { opacity: 0.85 !important; }
+
+/* Sidebar text */
+[data-testid="stSidebar"] .stMarkdown { color: #c9d1d9; }
+[data-testid="stSidebar"] label { color: #c9d1d9 !important; }
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -45,28 +153,34 @@ MASKS_ROOT   = DATASET_ROOT / "testing" / "test_frame_mask"
 MODEL_PATH   = PROJECT_ROOT / "artifacts" / "models" / "shanghaitech_windowed_rf.joblib"
 
 DEMO_CLIPS = {
-    "01_0130  —  score peaks at 0.997  ★ best demo":     "01_0130",
-    "02_0128  —  score peaks at 0.960":                   "02_0128",
-    "01_0063  —  fast-escalating anomaly":                "01_0063",
-    "01_0054  —  12-frame early warning":                 "01_0054",
-    "05_0018  —  normal clip  (should stay LOW)":         "05_0018",
+    "01_0130  —  peaks at 0.997  ★ best demo":  "01_0130",
+    "02_0128  —  peaks at 0.960":               "02_0128",
+    "01_0063  —  fast-escalating anomaly":       "01_0063",
+    "01_0054  —  12-frame early warning":        "01_0054",
+    "05_0018  —  normal clip (stays LOW)":       "05_0018",
 }
 
-# Thresholds for display — match training evaluation
 THRESH_MEDIUM = 0.50
 THRESH_HIGH   = 0.75
 
-LEVEL_COLOR = {"LOW": "#27ae60", "MEDIUM": "#f39c12", "HIGH": "#e74c3c"}
-LEVEL_ICON  = {"LOW": "🟢",      "MEDIUM": "🟡",       "HIGH": "🔴"}
+LEVEL_ICON  = {"LOW": "🟢", "MEDIUM": "🟡", "HIGH": "🔴"}
+
+BAR_COLOR = {
+    "LOW":    "#3fb950",
+    "MEDIUM": "#f0883e",
+    "HIGH":   "#ff7b72",
+}
 
 WINDOW_SIZE   = 30
 WINDOW_STRIDE = 10
 RESIZE        = (320, 240)
-FRAME_DIM     = 10
+
+# How often to refresh the chart during playback (every N frames)
+CHART_REFRESH = 5
 
 
 # ---------------------------------------------------------------------------
-# Model loading
+# Model
 # ---------------------------------------------------------------------------
 @st.cache_resource(show_spinner="Loading anomaly model…")
 def get_model():
@@ -74,10 +188,9 @@ def get_model():
 
 
 # ---------------------------------------------------------------------------
-# Feature extraction (same logic as train_windowed.py)
+# Feature extraction
 # ---------------------------------------------------------------------------
 def frames_to_window_feat(frames: list[np.ndarray]) -> np.ndarray:
-    """Convert list of BGR frames → 40-d window feature vector (1, 40)."""
     feats = []
     previous = None
     for frame in frames:
@@ -85,12 +198,10 @@ def frames_to_window_feat(frames: list[np.ndarray]) -> np.ndarray:
         feat = compute_frame_features(f, prev_frame=previous)
         previous = f
         feats.append(feat)
-
-    arr   = np.vstack(feats).astype(np.float32)      # (W, 10)
+    arr   = np.vstack(feats).astype(np.float32)
     third = max(1, len(arr) // 3)
     vec   = np.concatenate([
-        arr.mean(axis=0),
-        arr.std(axis=0),
+        arr.mean(axis=0), arr.std(axis=0),
         arr.max(axis=0),
         arr[-third:].mean(axis=0) - arr[:third].mean(axis=0),
     ])
@@ -98,52 +209,54 @@ def frames_to_window_feat(frames: list[np.ndarray]) -> np.ndarray:
 
 
 def score_to_level(score: float) -> str:
-    if score >= THRESH_HIGH:
-        return "HIGH"
-    if score >= THRESH_MEDIUM:
-        return "MEDIUM"
+    if score >= THRESH_HIGH:   return "HIGH"
+    if score >= THRESH_MEDIUM: return "MEDIUM"
     return "LOW"
 
 
 # ---------------------------------------------------------------------------
-# Frame overlay
+# Frame overlay (drawn with OpenCV, embedded in the video image itself)
 # ---------------------------------------------------------------------------
 def draw_overlay(
     frame: np.ndarray,
     score: float,
     level: str,
     frame_idx: int,
+    total_frames: int,
     gt_label: int | None,
 ) -> np.ndarray:
     vis = frame.copy()
     h, w = vis.shape[:2]
 
-    # Semi-transparent banner
-    banner = vis.copy()
-    cv2.rectangle(banner, (0, 0), (w, 54), (0, 0, 0), -1)
-    cv2.addWeighted(banner, 0.55, vis, 0.45, 0, vis)
+    bar_bgr = {"LOW": (40, 185, 63), "MEDIUM": (30, 136, 229), "HIGH": (60, 76, 231)}
 
-    # Colour-coded score bar at bottom of banner
-    bar_bgr = {
-        "LOW":    (39, 174, 96),
-        "MEDIUM": (243, 156, 18),
-        "HIGH":   (231, 76,  60),
-    }
-    col = tuple(reversed(bar_bgr.get(level, (100, 100, 100))))
-    cv2.rectangle(vis, (0, 46), (int(score * w), 54), col, -1)
+    # Top banner
+    overlay = vis.copy()
+    cv2.rectangle(overlay, (0, 0), (w, 60), (13, 17, 23), -1)
+    cv2.addWeighted(overlay, 0.75, vis, 0.25, 0, vis)
 
-    # Text
-    cv2.putText(vis, f"Score: {score:.3f}   |   {level}",
-                (8, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (255, 255, 255), 2)
-    cv2.putText(vis, f"Frame {frame_idx}",
-                (8, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (180, 180, 180), 1)
+    # Score text
+    col_bgr = bar_bgr.get(level, (150, 150, 150))
+    cv2.putText(vis, f"Score: {score:.3f}", (10, 28),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.85, (230, 237, 243), 2, cv2.LINE_AA)
+    cv2.putText(vis, level, (w - 120, 28),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.85, col_bgr, 2, cv2.LINE_AA)
 
-    # Ground truth (top-right)
+    # Score bar (thin strip at bottom of banner)
+    fill_w = int(score * w)
+    cv2.rectangle(vis, (0, 52), (w, 60), (33, 38, 45), -1)
+    cv2.rectangle(vis, (0, 52), (fill_w, 60), col_bgr, -1)
+
+    # Frame counter (bottom-left)
+    cv2.putText(vis, f"{frame_idx + 1} / {total_frames}",
+                (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 110, 120), 1, cv2.LINE_AA)
+
+    # Ground truth label (top-right corner, small)
     if gt_label is not None:
         gt_text  = "GT: ANOMALY" if gt_label == 1 else "GT: normal"
-        gt_color = (60, 60, 230) if gt_label == 1 else (40, 200, 40)
-        cv2.putText(vis, gt_text, (w - 190, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, gt_color, 2)
+        gt_color = (80, 80, 220) if gt_label == 1 else (40, 185, 63)
+        cv2.putText(vis, gt_text, (w - 200, h - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.50, gt_color, 1, cv2.LINE_AA)
 
     return cv2.cvtColor(vis, cv2.COLOR_BGR2RGB)
 
@@ -152,53 +265,66 @@ def draw_overlay(
 # Sidebar
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    st.title("🚨 Crowd Monitor")
-    st.markdown("---")
-
-    clip_label = st.selectbox("Select test clip", list(DEMO_CLIPS.keys()))
+    st.markdown("## 🚨 Crowd Monitor")
+    st.markdown("<div class='section-header'>Clip Selection</div>", unsafe_allow_html=True)
+    clip_label = st.selectbox("", list(DEMO_CLIPS.keys()), label_visibility="collapsed")
     clip_id    = DEMO_CLIPS[clip_label]
-    fps        = st.slider("Replay speed (fps)", 1, 25, value=8)
-    show_gt    = st.checkbox("Show ground-truth overlay", value=True)
 
-    st.markdown("---")
+    st.markdown("<div class='section-header'>Playback</div>", unsafe_allow_html=True)
+    fps     = st.slider("Speed (fps)", 1, 30, value=12)
+    show_gt = st.checkbox("Show ground-truth label", value=True)
+
+    st.markdown("<div class='section-header'>Thresholds</div>", unsafe_allow_html=True)
     st.markdown(
-        f"**Thresholds**\n\n"
-        f"🟢 LOW  < {THRESH_MEDIUM}\n\n"
-        f"🟡 MEDIUM  {THRESH_MEDIUM}–{THRESH_HIGH}\n\n"
-        f"🔴 HIGH  ≥ {THRESH_HIGH}"
+        f"🟢 &nbsp;**LOW** — score < {THRESH_MEDIUM}<br>"
+        f"🟡 &nbsp;**MEDIUM** — {THRESH_MEDIUM} to {THRESH_HIGH}<br>"
+        f"🔴 &nbsp;**HIGH** — score ≥ {THRESH_HIGH}",
+        unsafe_allow_html=True,
     )
-    st.markdown("---")
-    st.caption(
-        "**Model:** RandomForest · W=30 frames · 40-d features\n\n"
-        "**Dataset:** ShanghaiTech Campus\n\n"
-        "**ROC-AUC:** 0.831  ·  **Recall:** 88.5%"
+
+    st.markdown("<div class='section-header'>Model Info</div>", unsafe_allow_html=True)
+    st.markdown(
+        "**Type:** RandomForest · W=30 frames  \n"
+        "**Features:** 40-d temporal window  \n"
+        "**ROC-AUC:** 0.831 &nbsp;·&nbsp; **Recall:** 88.5%",
+        unsafe_allow_html=True,
     )
 
 # ---------------------------------------------------------------------------
 # Main layout
 # ---------------------------------------------------------------------------
-st.title("Abnormal Crowd Behaviour Detection — Live Demo")
-st.caption(f"Clip: `{clip_id}`  ·  Window: {WINDOW_SIZE} frames  ·  Stride: {WINDOW_STRIDE} frames")
+st.markdown("# Abnormal Crowd Behaviour Detection")
+st.markdown(
+    f"<span style='color:#8b949e;font-size:0.9rem'>Clip: <code>{clip_id}</code> &nbsp;·&nbsp; "
+    f"Window: {WINDOW_SIZE} frames &nbsp;·&nbsp; Stride: {WINDOW_STRIDE} frames</span>",
+    unsafe_allow_html=True,
+)
 
-col_vid, col_stats = st.columns([3, 2])
+col_vid, col_stats = st.columns([3, 2], gap="large")
 
 with col_vid:
     frame_ph = st.empty()
 
 with col_stats:
-    st.subheader("Live Anomaly Score")
-    metric_ph = st.empty()
     level_ph  = st.empty()
+    score_ph  = st.empty()
     bar_ph    = st.empty()
-    st.subheader("Score Over Time")
-    chart_ph  = st.empty()
-    st.subheader("Alert Log")
-    log_ph    = st.empty()
 
-start = st.button("▶  Start Demo", type="primary", use_container_width=True)
+    st.markdown("<div class='section-header'>Score Over Time</div>", unsafe_allow_html=True)
+    chart_ph = st.empty()
+
+    st.markdown("<div class='section-header'>Alert Log</div>", unsafe_allow_html=True)
+    log_ph = st.empty()
+
+start = st.button("▶  Start Demo", use_container_width=True)
 
 if not start:
-    frame_ph.info("👆 Press **Start Demo** to begin.")
+    frame_ph.markdown(
+        "<div style='background:#161b22;border:1px solid #30363d;border-radius:12px;"
+        "padding:60px;text-align:center;color:#8b949e;font-size:1.1rem'>"
+        "👆 &nbsp; Press <b>Start Demo</b> to begin</div>",
+        unsafe_allow_html=True,
+    )
     st.stop()
 
 # ---------------------------------------------------------------------------
@@ -211,85 +337,125 @@ if not clip_dir.exists():
     st.error(f"Clip not found: {clip_dir}")
     st.stop()
 
-frame_paths = _sorted_frame_paths(clip_dir)
-gt_mask     = np.load(mask_path).astype(np.uint8).reshape(-1) if mask_path.exists() else None
-model       = get_model()
+frame_paths  = _sorted_frame_paths(clip_dir)
+total_frames = len(frame_paths)
+gt_mask      = np.load(mask_path).astype(np.uint8).reshape(-1) if mask_path.exists() else None
+model        = get_model()
 
 # ---------------------------------------------------------------------------
-# Replay loop
+# Phase 1: Pre-score all windows (inference happens here, not during playback)
 # ---------------------------------------------------------------------------
-frame_buffer: deque[np.ndarray] = deque(maxlen=WINDOW_SIZE)
-score_history: list[dict]       = []
-alert_log: list[dict]           = []
+frame_scores: list[float] = [0.0] * total_frames
+score_history: list[dict] = []
+alert_log: list[dict]     = []
 
-current_score = 0.0
-current_level = "LOW"
-frame_delay   = 1.0 / fps
+with st.spinner("Analysing clip… (this takes a few seconds)"):
+    progress_bar = st.progress(0, text="Scoring frames…")
+    frame_buffer: deque[np.ndarray] = deque(maxlen=WINDOW_SIZE)
+    last_score = 0.0
+
+    for idx, fp in enumerate(frame_paths):
+        frame = cv2.imread(str(fp), cv2.IMREAD_COLOR)
+        if frame is None:
+            frame_scores[idx] = last_score
+            continue
+
+        frame_buffer.append(frame)
+
+        if len(frame_buffer) == WINDOW_SIZE and idx % WINDOW_STRIDE == 0:
+            feat       = frames_to_window_feat(list(frame_buffer))
+            last_score = float(model.predict_proba(feat)[0, 1])
+            level      = score_to_level(last_score)
+            score_history.append({"frame": idx, "score": last_score})
+
+            gt_label = int(gt_mask[idx]) if (gt_mask is not None and idx < len(gt_mask)) else None
+            if level in ("MEDIUM", "HIGH"):
+                alert_log.append({
+                    "frame":    idx,
+                    "time (s)": f"{idx / 25:.1f}",
+                    "level":    level,
+                    "score":    f"{last_score:.3f}",
+                    "gt":       "ANOMALY" if gt_label == 1 else "normal",
+                })
+
+        frame_scores[idx] = last_score
+        progress_bar.progress((idx + 1) / total_frames,
+                              text=f"Scoring frames… {idx + 1}/{total_frames}")
+
+    progress_bar.empty()
+
+# ---------------------------------------------------------------------------
+# Phase 2: Smooth playback (no inference — just rendering)
+# ---------------------------------------------------------------------------
+frame_delay = 1.0 / fps
 
 for frame_idx, frame_path in enumerate(frame_paths):
     frame = cv2.imread(str(frame_path), cv2.IMREAD_COLOR)
     if frame is None:
         continue
 
-    frame_buffer.append(frame)
+    score = frame_scores[frame_idx]
+    level = score_to_level(score)
     gt_label = int(gt_mask[frame_idx]) if (gt_mask is not None and frame_idx < len(gt_mask)) else None
 
-    # Score every WINDOW_STRIDE frames once buffer is full
-    if len(frame_buffer) == WINDOW_SIZE and frame_idx % WINDOW_STRIDE == 0:
-        window_feat     = frames_to_window_feat(list(frame_buffer))
-        current_score   = float(model.predict_proba(window_feat)[0, 1])
-        current_level   = score_to_level(current_score)
-        score_history.append({"frame": frame_idx, "score": current_score})
-
-        if current_level in ("MEDIUM", "HIGH"):
-            alert_log.append({
-                "frame":    frame_idx,
-                "time (s)": f"{frame_idx / 25:.2f}",
-                "level":    current_level,
-                "score":    f"{current_score:.3f}",
-                "gt":       "ANOMALY" if gt_label == 1 else "normal",
-            })
-
-    # --- Video frame ---
-    vis = draw_overlay(frame, current_score, current_level, frame_idx,
+    # Video
+    vis = draw_overlay(frame, score, level, frame_idx, total_frames,
                        gt_label if show_gt else None)
     frame_ph.image(vis, use_container_width=True)
 
-    # --- Score metric ---
-    metric_ph.metric("Anomaly Score", f"{current_score:.3f}")
-
-    # --- Level badge ---
-    color = LEVEL_COLOR[current_level]
-    icon  = LEVEL_ICON[current_level]
+    # Alert badge
     level_ph.markdown(
-        f"<div style='background:{color};border-radius:8px;padding:14px;"
-        f"text-align:center;font-size:1.5em;font-weight:bold;color:white'>"
-        f"{icon} {current_level}</div>",
+        f"<div class='alert-badge alert-{level}'>{LEVEL_ICON[level]} &nbsp; {level}</div>",
         unsafe_allow_html=True,
     )
 
-    # --- Progress bar ---
-    bar_ph.progress(min(current_score, 1.0))
+    # Score card
+    score_ph.markdown(
+        f"<div class='metric-card'>"
+        f"<div class='label'>Anomaly Score</div>"
+        f"<div class='value' style='color:{BAR_COLOR[level]}'>{score:.3f}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
-    # --- Chart ---
-    if len(score_history) > 1:
-        df = pd.DataFrame(score_history).set_index("frame")
-        chart_ph.line_chart(df, height=180)
+    # Score bar
+    bar_ph.markdown(
+        f"<div class='score-bar-wrap'>"
+        f"<div class='score-bar-fill' style='width:{score*100:.1f}%;background:{BAR_COLOR[level]}'></div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
-    # --- Alert log ---
+    # Chart — only refresh every N frames to reduce Streamlit rerender cost
+    if frame_idx % CHART_REFRESH == 0 and len(score_history) > 1:
+        visible = [s for s in score_history if s["frame"] <= frame_idx]
+        if visible:
+            df = pd.DataFrame(visible).set_index("frame")
+            chart_ph.line_chart(df, height=160, use_container_width=True)
+
+    # Alert log — only refresh when new alert added
     if alert_log:
-        log_ph.dataframe(
-            pd.DataFrame(alert_log[::-1]),
-            use_container_width=True,
-            hide_index=True,
-        )
+        visible_alerts = [a for a in alert_log if int(a["frame"]) <= frame_idx]
+        if visible_alerts:
+            log_ph.dataframe(
+                pd.DataFrame(visible_alerts[::-1]),
+                use_container_width=True,
+                hide_index=True,
+            )
     else:
-        log_ph.info("No MEDIUM / HIGH alerts yet.")
+        log_ph.markdown(
+            "<div style='color:#8b949e;font-size:0.85rem;padding:8px'>No alerts raised — clip is normal.</div>",
+            unsafe_allow_html=True,
+        )
 
     time.sleep(frame_delay)
 
+# ---------------------------------------------------------------------------
 # Done
-st.success(
-    f"✅ Complete — {len(frame_paths)} frames, "
-    f"{len(alert_log)} MEDIUM/HIGH alerts generated."
+# ---------------------------------------------------------------------------
+st.markdown(
+    f"<div style='background:#161b22;border:1px solid #238636;border-radius:10px;"
+    f"padding:16px;text-align:center;color:#3fb950;font-weight:600;margin-top:12px'>"
+    f"✅ &nbsp; Complete — {total_frames} frames · {len(alert_log)} MEDIUM/HIGH alerts</div>",
+    unsafe_allow_html=True,
 )
