@@ -14,8 +14,19 @@ venv/
 data/raw/
 data/interim/
 data/processed/
-artifacts/
 docs/reports/*.csv
+
+# Artifacts — only keep the production model, ignore everything else
+artifacts/alerts.db
+artifacts/reports/
+artifacts/models/shanghaitech_ablation_noflow.joblib
+artifacts/models/shanghaitech_ablation_w15.joblib
+artifacts/models/shanghaitech_anomaly_improved.joblib
+artifacts/models/shanghaitech_anomaly_rf_70_30.joblib
+artifacts/models/shanghaitech_cnn_70_30.pt
+artifacts/models/shanghaitech_rf_70_30.joblib
+artifacts/models/shanghaitech_windowed.joblib
+artifacts/models/shanghaitech_windowed_gbt.joblib
 
 # Local extraction scratch
 progress_extracted.txt
@@ -26,3 +37,17 @@ archive.zip
 # IDE
 .vscode/
 .idea/
+
+# Dev/internal — not needed by client
+everything-claude-code/
+tests/
+docs/plans/
+scripts/train_production_model.py
+scripts/train_baseline.py
+scripts/train_anomaly_classifier.py
+scripts/run_ablations.py
+scripts/evaluate_model.py
+scripts/prepare_data.py
+scripts/run_inference.py
+scripts/single_clip_demo.py
+
