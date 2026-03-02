@@ -20,7 +20,7 @@ def _make_moving_frames() -> tuple[np.ndarray, np.ndarray]:
 def test_compute_frame_features_length_and_motion_signal() -> None:
     prev_frame, frame = _make_moving_frames()
     feat = compute_frame_features(frame, prev_frame=prev_frame)
-    assert feat.shape == (6,)
+    assert feat.shape == (10,)
     assert float(feat[-2]) > 0.0
 
 
