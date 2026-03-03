@@ -28,12 +28,6 @@
 3. A browser window opens automatically
 4. Select a clip from the left sidebar and press **▶ Start Demo**
 
-### Option B — Windows CMD Launcher
-
-1. Double-click `START_DEMO.bat` in the project folder
-2. If dependencies are missing, they will install automatically (one-time)
-3. A browser window opens automatically
-
 ---
 
 ## Manual Setup (Step by Step)

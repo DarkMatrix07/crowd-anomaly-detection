@@ -26,7 +26,6 @@ project/
 ├── data/                   # Raw and processed dataset
 ├── documentation/          # This documentation folder
 ├── START_DEMO.sh           # Demo launcher (Git Bash)
-├── START_DEMO.bat          # Demo launcher (Windows CMD)
 ├── requirements.txt        # Python dependencies
 ├── pyproject.toml          # Project metadata and tooling config
 └── .env.example            # Environment variable template
@@ -38,7 +37,7 @@ project/
 
 ### `START_DEMO.sh`
 **What it is:** A bash shell script that launches the interactive demo.
-**Why it exists:** Double-clicking `START_DEMO.bat` on some Windows setups causes the window to close before errors are visible due to CMD.exe limitations. The `.sh` file runs in Git Bash, which has proper error display, coloured output, and always waits for the user to press Enter before closing.
+**Why it exists:** The `.sh` file runs in Git Bash, which has proper error display, coloured output, and always waits for the user to press Enter before closing — far more reliable than Windows CMD for running Python services.
 **What it does:**
 1. Changes directory to the project folder
 2. Checks that Python is available in PATH
@@ -49,14 +48,6 @@ project/
 7. If anything fails, shows the error in red and waits for Enter before closing
 
 **How to run:** Open Git Bash in the project folder and type `bash START_DEMO.sh`
-
----
-
-### `START_DEMO.bat`
-**What it is:** A Windows CMD batch script that launches the interactive demo.
-**Why it exists:** Provides a one-click launcher for users who are not familiar with command-line tools on Windows. Double-clicking it opens a terminal and starts the demo.
-**What it does:** Same checks as the `.sh` file but using Windows CMD syntax. Redirects stderr to stdout with `2>&1` so all errors are visible.
-**Note:** If this file causes issues (window closes unexpectedly), use `START_DEMO.sh` in Git Bash instead.
 
 ---
 

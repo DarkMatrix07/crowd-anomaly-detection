@@ -168,7 +168,6 @@ Single-frame analysis is too noisy and produces excessive false alarms (walking 
 | Item | Description |
 |------|-------------|
 | `START_DEMO.sh` | One-click demo launcher (Git Bash) |
-| `START_DEMO.bat` | Windows CMD demo launcher |
 | `scripts/crowd_anomaly_demo.py` | Interactive Streamlit demo |
 | `src/` | Full production source code |
 | `artifacts/models/` | Trained model files |

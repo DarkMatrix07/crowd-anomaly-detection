@@ -148,8 +148,8 @@ The simplest way is to run `bash START_DEMO.sh` in Git Bash from the project fol
 
 ---
 
-**Q23. Why is the START_DEMO.bat closing immediately?**
-This was a known issue that has been fixed. The root causes were: (1) Streamlit 1.54.0 no longer accepts an empty string label for `st.selectbox`, causing an immediate crash; (2) deprecated command-line flags that caused silent failures. Both have been fixed. If you still see issues with the BAT file, use `START_DEMO.sh` in Git Bash instead, which is more reliable.
+**Q23. Why should I use START_DEMO.sh instead of a BAT file?**
+The `.sh` file runs in Git Bash, which provides reliable error output, coloured messages, and always waits for the user to press Enter before closing. Windows CMD has encoding quirks and inconsistent behaviour with Python processes, making `.sh` the recommended launcher.
 
 ---
 
