@@ -66,7 +66,6 @@ archive.zip
 # =============================================================
 docs/plans/
 docs/reports/*.csv
-docs/reports/figures/
 
 # =============================================================
 # Artifacts — keep only the production model
