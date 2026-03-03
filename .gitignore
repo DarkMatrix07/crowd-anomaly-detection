@@ -1,22 +1,76 @@
-# Python cache and artifacts
+# =============================================================
+# Python
+# =============================================================
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
 
-# Virtual envs
+# =============================================================
+# Virtual environments
+# =============================================================
 .venv/
 venv/
+env/
+ENV/
 
-# Local environment
+# =============================================================
+# Environment / secrets
+# =============================================================
 .env
+*.env.local
 
-# Data and outputs
+# =============================================================
+# OS files
+# =============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =============================================================
+# IDE / editor
+# =============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =============================================================
+# Test / dev tooling
+# =============================================================
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+*.tmp
+*.temp
+
+# =============================================================
+# Dataset (large binary files, not for repo)
+# =============================================================
 data/raw/
 data/interim/
 data/processed/
-docs/reports/*.csv
+ShanghaiTech/
+shanghaitech_h5_empty/
+archive.zip
 
-# Artifacts — only keep the production model, ignore everything else
+# =============================================================
+# Internal / dev-only docs
+# =============================================================
+docs/plans/
+docs/reports/*.csv
+docs/reports/figures/
+
+# =============================================================
+# Artifacts — keep only the production model
+# =============================================================
 artifacts/alerts.db
 artifacts/reports/
 artifacts/models/shanghaitech_ablation_noflow.joblib
@@ -28,20 +82,9 @@ artifacts/models/shanghaitech_rf_70_30.joblib
 artifacts/models/shanghaitech_windowed.joblib
 artifacts/models/shanghaitech_windowed_gbt.joblib
 
-# Local extraction scratch
-progress_extracted.txt
-ShanghaiTech/
-shanghaitech_h5_empty/
-archive.zip
-
-# IDE
-.vscode/
-.idea/
-
-# Dev/internal — not needed by client
-everything-claude-code/
-tests/
-docs/plans/
+# =============================================================
+# Internal scripts (training / evaluation — not for client)
+# =============================================================
 scripts/train_production_model.py
 scripts/train_baseline.py
 scripts/train_anomaly_classifier.py
@@ -51,3 +94,14 @@ scripts/prepare_data.py
 scripts/run_inference.py
 scripts/single_clip_demo.py
 
+# =============================================================
+# Tests (internal, not for client delivery)
+# =============================================================
+tests/
+
+# =============================================================
+# Misc internal files
+# =============================================================
+everything-claude-code/
+progress_extracted.txt
+*.pdf
