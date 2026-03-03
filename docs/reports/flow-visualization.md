@@ -1,6 +1,6 @@
 # Optical Flow Visualisations
 
-Generated figures are saved under `docs/reports/figures/flow/`.
+Generated figures are saved under `visualizations/`.
 
 Each figure is a three-panel strip:
 - **Left panel** — original camera frame with scene label
