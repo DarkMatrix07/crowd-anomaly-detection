@@ -9,7 +9,9 @@ Run with:
 """
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 import time
 from collections import deque
 from pathlib import Path
@@ -188,6 +190,31 @@ def get_model():
 
 
 # ---------------------------------------------------------------------------
+# Video upload helpers
+# ---------------------------------------------------------------------------
+MAX_UPLOAD_FRAMES = 1500  # cap to avoid memory issues on very long videos
+
+
+def extract_video_frames(video_bytes: bytes) -> list[np.ndarray]:
+    """Write uploaded bytes to a temp file and extract all frames via OpenCV."""
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        tmp.write(video_bytes)
+        tmp_path = tmp.name
+    frames: list[np.ndarray] = []
+    try:
+        cap = cv2.VideoCapture(tmp_path)
+        while len(frames) < MAX_UPLOAD_FRAMES:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frames.append(frame)
+        cap.release()
+    finally:
+        os.unlink(tmp_path)
+    return frames
+
+
+# ---------------------------------------------------------------------------
 # Feature extraction
 # ---------------------------------------------------------------------------
 def frames_to_window_feat(frames: list[np.ndarray]) -> np.ndarray:
@@ -266,13 +293,44 @@ def draw_overlay(
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("## 🚨 Crowd Monitor")
-    st.markdown("<div class='section-header'>Clip Selection</div>", unsafe_allow_html=True)
-    clip_label = st.selectbox("", list(DEMO_CLIPS.keys()), label_visibility="collapsed")
-    clip_id    = DEMO_CLIPS[clip_label]
+
+    st.markdown("<div class='section-header'>Source</div>", unsafe_allow_html=True)
+    input_mode = st.radio(
+        "Input mode",
+        ["Demo Clips", "Upload Video"],
+        label_visibility="collapsed",
+        horizontal=True,
+    )
+
+    # --- Demo Clips mode ---
+    clip_id: str | None = None
+    uploaded_frames: list[np.ndarray] | None = None
+    upload_name: str = ""
+
+    if input_mode == "Demo Clips":
+        st.markdown("<div class='section-header'>Clip Selection</div>", unsafe_allow_html=True)
+        clip_label = st.selectbox("Select clip", list(DEMO_CLIPS.keys()), label_visibility="collapsed")
+        clip_id    = DEMO_CLIPS[clip_label]
+    else:
+        st.markdown("<div class='section-header'>Upload Video</div>", unsafe_allow_html=True)
+        uploaded_file = st.file_uploader(
+            "Choose a video file",
+            type=["mp4", "avi", "mov", "mkv"],
+            label_visibility="collapsed",
+        )
+        if uploaded_file is not None:
+            upload_name = uploaded_file.name
+            with st.spinner("Reading video…"):
+                uploaded_frames = extract_video_frames(uploaded_file.read())
+            st.success(f"{len(uploaded_frames)} frames loaded from **{upload_name}**")
+            if len(uploaded_frames) == MAX_UPLOAD_FRAMES:
+                st.warning(f"Capped at {MAX_UPLOAD_FRAMES} frames. Longer sections will be ignored.")
+        else:
+            st.info("Upload an MP4, AVI, MOV, or MKV file to analyse.")
 
     st.markdown("<div class='section-header'>Playback</div>", unsafe_allow_html=True)
-    fps     = st.slider("Speed (fps)", 1, 30, value=12)
-    show_gt = st.checkbox("Show ground-truth label", value=True)
+    fps = st.slider("Speed (fps)", 1, 30, value=12)
+    show_gt = (input_mode == "Demo Clips") and st.checkbox("Show ground-truth label", value=True)
 
     st.markdown("<div class='section-header'>Thresholds</div>", unsafe_allow_html=True)
     st.markdown(
@@ -294,8 +352,9 @@ with st.sidebar:
 # Main layout
 # ---------------------------------------------------------------------------
 st.markdown("# Abnormal Crowd Behaviour Detection")
+_source_label = f"<code>{clip_id}</code>" if input_mode == "Demo Clips" else f"<code>{upload_name or 'no file'}</code>"
 st.markdown(
-    f"<span style='color:#8b949e;font-size:0.9rem'>Clip: <code>{clip_id}</code> &nbsp;·&nbsp; "
+    f"<span style='color:#8b949e;font-size:0.9rem'>Source: {_source_label} &nbsp;·&nbsp; "
     f"Window: {WINDOW_SIZE} frames &nbsp;·&nbsp; Stride: {WINDOW_STRIDE} frames</span>",
     unsafe_allow_html=True,
 )
@@ -316,31 +375,51 @@ with col_stats:
     st.markdown("<div class='section-header'>Alert Log</div>", unsafe_allow_html=True)
     log_ph = st.empty()
 
-start = st.button("▶  Start Demo", use_container_width=True)
+_upload_ready = (input_mode == "Upload Video" and uploaded_frames is not None)
+_demo_ready   = (input_mode == "Demo Clips")
+start = st.button("▶  Start Demo", use_container_width=True, disabled=not (_upload_ready or _demo_ready))
 
 if not start:
-    frame_ph.markdown(
-        "<div style='background:#161b22;border:1px solid #30363d;border-radius:12px;"
-        "padding:60px;text-align:center;color:#8b949e;font-size:1.1rem'>"
-        "👆 &nbsp; Press <b>Start Demo</b> to begin</div>",
-        unsafe_allow_html=True,
-    )
+    if input_mode == "Upload Video" and not _upload_ready:
+        frame_ph.markdown(
+            "<div style='background:#161b22;border:1px solid #30363d;border-radius:12px;"
+            "padding:60px;text-align:center;color:#8b949e;font-size:1.1rem'>"
+            "⬆️ &nbsp; Upload a video file in the sidebar, then press <b>Start Demo</b></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        frame_ph.markdown(
+            "<div style='background:#161b22;border:1px solid #30363d;border-radius:12px;"
+            "padding:60px;text-align:center;color:#8b949e;font-size:1.1rem'>"
+            "👆 &nbsp; Press <b>Start Demo</b> to begin</div>",
+            unsafe_allow_html=True,
+        )
     st.stop()
 
 # ---------------------------------------------------------------------------
-# Load clip
+# Load clip — unified for both demo clips and uploaded video
 # ---------------------------------------------------------------------------
-clip_dir  = FRAMES_ROOT / clip_id
-mask_path = MASKS_ROOT / f"{clip_id}.npy"
+model   = get_model()
+gt_mask = None
 
-if not clip_dir.exists():
-    st.error(f"Clip not found: {clip_dir}")
-    st.stop()
+if input_mode == "Demo Clips":
+    clip_dir  = FRAMES_ROOT / clip_id
+    mask_path = MASKS_ROOT / f"{clip_id}.npy"
+    if not clip_dir.exists():
+        st.error(f"Clip not found: {clip_dir}")
+        st.stop()
+    frame_paths  = _sorted_frame_paths(clip_dir)
+    total_frames = len(frame_paths)
+    gt_mask      = np.load(mask_path).astype(np.uint8).reshape(-1) if mask_path.exists() else None
 
-frame_paths  = _sorted_frame_paths(clip_dir)
-total_frames = len(frame_paths)
-gt_mask      = np.load(mask_path).astype(np.uint8).reshape(-1) if mask_path.exists() else None
-model        = get_model()
+    def get_frame(idx: int) -> np.ndarray | None:
+        return cv2.imread(str(frame_paths[idx]), cv2.IMREAD_COLOR)
+else:
+    total_frames = len(uploaded_frames)  # type: ignore[arg-type]
+
+    def get_frame(idx: int) -> np.ndarray | None:
+        return uploaded_frames[idx]  # type: ignore[index]
+
 
 # ---------------------------------------------------------------------------
 # Phase 1: Pre-score all windows (inference happens here, not during playback)
@@ -354,8 +433,8 @@ with st.spinner("Analysing clip… (this takes a few seconds)"):
     frame_buffer: deque[np.ndarray] = deque(maxlen=WINDOW_SIZE)
     last_score = 0.0
 
-    for idx, fp in enumerate(frame_paths):
-        frame = cv2.imread(str(fp), cv2.IMREAD_COLOR)
+    for idx in range(total_frames):
+        frame = get_frame(idx)
         if frame is None:
             frame_scores[idx] = last_score
             continue
@@ -369,14 +448,16 @@ with st.spinner("Analysing clip… (this takes a few seconds)"):
             score_history.append({"frame": idx, "score": last_score})
 
             gt_label = int(gt_mask[idx]) if (gt_mask is not None and idx < len(gt_mask)) else None
+            alert_entry: dict = {
+                "frame":    idx,
+                "time (s)": f"{idx / 25:.1f}",
+                "level":    level,
+                "score":    f"{last_score:.3f}",
+            }
+            if gt_mask is not None:
+                alert_entry["gt"] = "ANOMALY" if gt_label == 1 else "normal"
             if level in ("MEDIUM", "HIGH"):
-                alert_log.append({
-                    "frame":    idx,
-                    "time (s)": f"{idx / 25:.1f}",
-                    "level":    level,
-                    "score":    f"{last_score:.3f}",
-                    "gt":       "ANOMALY" if gt_label == 1 else "normal",
-                })
+                alert_log.append(alert_entry)
 
         frame_scores[idx] = last_score
         progress_bar.progress((idx + 1) / total_frames,
@@ -389,8 +470,8 @@ with st.spinner("Analysing clip… (this takes a few seconds)"):
 # ---------------------------------------------------------------------------
 frame_delay = 1.0 / fps
 
-for frame_idx, frame_path in enumerate(frame_paths):
-    frame = cv2.imread(str(frame_path), cv2.IMREAD_COLOR)
+for frame_idx in range(total_frames):
+    frame = get_frame(frame_idx)
     if frame is None:
         continue
 

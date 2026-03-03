@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0"
 title Crowd Anomaly Detection - Demo Launcher
 color 0A
 
@@ -16,6 +17,11 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+
+REM Show Python version being used
+echo Python found:
+python --version
+echo.
 
 REM Check dependencies are installed
 echo Checking dependencies...
@@ -52,6 +58,11 @@ echo To stop the demo: close this window or press Ctrl+C
 echo ============================================================
 echo.
 
-python -m streamlit run scripts/crowd_anomaly_demo.py --server.headless false --browser.gatherUsageStats false
+REM Run streamlit — all output (stdout + stderr) stays visible in this window
+python -m streamlit run scripts\crowd_anomaly_demo.py 2>&1
 
+echo.
+echo ============================================================
+echo   Demo stopped.
+echo ============================================================
 pause

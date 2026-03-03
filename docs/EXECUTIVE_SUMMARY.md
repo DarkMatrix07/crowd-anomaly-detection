@@ -3,7 +3,6 @@
 
 **Prepared by:** Manas Chowdary Kannikanti and team, SRM University AP
 **Supervisor:** Dr. Surochita Pal
-**Delivered to:** Client
 
 ---
 
@@ -92,6 +91,3 @@ These results **exceed the project's target threshold** of 80% detection accurac
 
 ---
 
-## Contact
-
-For questions about this system, please contact the project team at SRM University AP.
