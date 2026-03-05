@@ -77,13 +77,13 @@ def main() -> int:
         info(f"Copying frames: {clip_id} ...")
         shutil.copytree(src_clip, dst_clip, dirs_exist_ok=True)
         frame_count = sum(1 for _ in dst_clip.glob("*.jpg"))
-        info(f"  → {frame_count} frames copied")
+        info(f"  -> {frame_count} frames copied")
 
         # Copy mask if available
         src_mask = SRC_MASKS / f"{clip_id}.npy"
         if src_mask.exists():
             shutil.copy2(src_mask, DST_MASKS / f"{clip_id}.npy")
-            info(f"  → mask copied")
+            info(f"  -> mask copied")
         else:
             warn(f"  Mask not found for {clip_id}")
 

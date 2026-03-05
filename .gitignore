@@ -57,9 +57,7 @@ htmlcov/
 data/raw/
 data/interim/
 data/processed/
-# Demo data (populated locally via scripts/setup_demo_data.py)
-data/demo/frames/*/
-data/demo/masks/*.npy
+# Demo data is committed to the repo (5 pre-selected clips)
 ShanghaiTech/
 shanghaitech_h5_empty/
 archive.zip
