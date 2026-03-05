@@ -45,7 +45,20 @@ if [[ ! -f "$MODEL" ]]; then
 fi
 info "Model found."
 
-# ── 4. Launch ───────────────────────────────────────────────────────────────
+# ── 4. Demo data ─────────────────────────────────────────────────────────────
+DEMO_CLIP="data/demo/frames/01_0130"
+if [[ ! -d "$DEMO_CLIP" || -z "$(ls -A "$DEMO_CLIP" 2>/dev/null)" ]]; then
+    warn "Demo clips not found — running setup..."
+    python scripts/setup_demo_data.py
+    if [[ $? -ne 0 ]]; then
+        warn "Demo data setup failed (dataset may not be present)."
+        warn "You can still use 'Upload Video' mode in the demo app."
+    fi
+else
+    info "Demo clips found."
+fi
+
+# ── 5. Launch ───────────────────────────────────────────────────────────────
 echo
 info "Starting demo — browser will open automatically..."
 echo "  To stop: press Ctrl+C in this window"

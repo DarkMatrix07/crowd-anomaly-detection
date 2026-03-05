@@ -12,6 +12,27 @@ Implementation scaffold for abnormal crowd behaviour detection and early warning
 python -m pip install -r requirements.txt
 ```
 
+## Running the Demo
+
+```bash
+bash START_DEMO.sh
+```
+
+The launcher will install dependencies, check for the model file, and attempt
+to set up demo clip data automatically.
+
+**First time setup (if you have the ShanghaiTech dataset):**
+Place the dataset at `data/raw/shanghaitech/shanghaitech/`, then run:
+
+```bash
+python scripts/setup_demo_data.py
+```
+
+This copies the 5 pre-selected demo clips into `data/demo/` (used by the app).
+
+**No dataset?** The demo app also has an **Upload Video** mode — just upload
+any `.mp4`, `.avi`, `.mov`, or `.mkv` file directly from the sidebar.
+
 ## CLI Usage
 
 ```bash

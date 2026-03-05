@@ -149,9 +149,15 @@ h1 { color: #e6edf3 !important; font-weight: 700 !important; }
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-DATASET_ROOT = PROJECT_ROOT / "data" / "raw" / "shanghaitech" / "shanghaitech"
-FRAMES_ROOT  = DATASET_ROOT / "testing" / "frames"
-MASKS_ROOT   = DATASET_ROOT / "testing" / "test_frame_mask"
+DEMO_DATA    = PROJECT_ROOT / "data" / "demo"
+FRAMES_ROOT  = DEMO_DATA / "frames"
+MASKS_ROOT   = DEMO_DATA / "masks"
+# Fallback: full dataset (local dev, dataset present)
+_RAW_FRAMES  = PROJECT_ROOT / "data" / "raw" / "shanghaitech" / "shanghaitech" / "testing" / "frames"
+_RAW_MASKS   = PROJECT_ROOT / "data" / "raw" / "shanghaitech" / "shanghaitech" / "testing" / "test_frame_mask"
+if not (FRAMES_ROOT / "01_0130").exists() and (_RAW_FRAMES / "01_0130").exists():
+    FRAMES_ROOT = _RAW_FRAMES
+    MASKS_ROOT  = _RAW_MASKS
 MODEL_PATH   = PROJECT_ROOT / "artifacts" / "models" / "shanghaitech_windowed_rf.joblib"
 
 DEMO_CLIPS = {
@@ -406,7 +412,17 @@ if input_mode == "Demo Clips":
     clip_dir  = FRAMES_ROOT / clip_id
     mask_path = MASKS_ROOT / f"{clip_id}.npy"
     if not clip_dir.exists():
-        st.error(f"Clip not found: {clip_dir}")
+        st.error(f"Demo clip not found: `{clip_id}`")
+        st.markdown(
+            "**The demo dataset has not been set up yet.**\n\n"
+            "Run this once from the project root to copy the demo clips:\n"
+            "```\n"
+            "python scripts/setup_demo_data.py\n"
+            "```\n"
+            "This requires the full ShanghaiTech dataset in `data/raw/`.\n\n"
+            "**No dataset?** Switch to **Upload Video** mode in the sidebar "
+            "and analyse your own video file instead."
+        )
         st.stop()
     frame_paths  = _sorted_frame_paths(clip_dir)
     total_frames = len(frame_paths)
