@@ -9,6 +9,7 @@ class Conv3DAutoencoder(nn.Module):
 
     Trained on normal-only clips. High reconstruction error => anomaly.
     Input shape: (B, C=3, T=16, H=64, W=64)
+    Requires input normalized to [0, 1] (pixel values / 255.0).
     """
 
     def __init__(self, base_channels: int = 32) -> None:
@@ -21,17 +22,17 @@ class Conv3DAutoencoder(nn.Module):
             # (B, 3, 16, 64, 64) -> (B, c, 16, 32, 32)
             nn.Conv3d(3, c, kernel_size=3, padding=1),
             nn.BatchNorm3d(c),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.MaxPool3d(kernel_size=(1, 2, 2)),
             # -> (B, c*2, 8, 16, 16)
             nn.Conv3d(c, c * 2, kernel_size=3, padding=1),
             nn.BatchNorm3d(c * 2),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.MaxPool3d(kernel_size=(2, 2, 2)),
             # -> (B, c*4, 4, 8, 8)
             nn.Conv3d(c * 2, c * 4, kernel_size=3, padding=1),
             nn.BatchNorm3d(c * 4),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.MaxPool3d(kernel_size=(2, 2, 2)),
         )
 
@@ -41,11 +42,11 @@ class Conv3DAutoencoder(nn.Module):
             # (B, c*4, 4, 8, 8) -> (B, c*2, 8, 16, 16)
             nn.ConvTranspose3d(c * 4, c * 2, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
             nn.BatchNorm3d(c * 2),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             # -> (B, c, 16, 32, 32)
             nn.ConvTranspose3d(c * 2, c, kernel_size=(2, 2, 2), stride=(2, 2, 2)),
             nn.BatchNorm3d(c),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             # -> (B, 3, 16, 64, 64)
             nn.ConvTranspose3d(c, 3, kernel_size=(1, 2, 2), stride=(1, 2, 2)),
             nn.Sigmoid(),
