@@ -7,6 +7,10 @@ Usage
                                         [--data-dir data/raw/shanghaitech/shanghaitech/training/videos]
                                         [--out-path artifacts/models/autoencoder.pt]
 
+The data-dir may contain either:
+  - .avi video files  (ShanghaiTech training set layout)
+  - sub-directories of JPEG frames  (pre-extracted layout)
+
 The script saves the model state dict to --out-path on completion.
 """
 from __future__ import annotations
@@ -14,10 +18,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Dataset, random_split
 
 from src.data.normal_clip_dataset import NormalClipDataset
 from src.models.autoencoder import Conv3DAutoencoder
@@ -30,6 +35,60 @@ FRAME_SIZE = (64, 64)
 STRIDE = 8
 
 
+class _AviClipDataset(Dataset):
+    """Extract overlapping clips directly from .avi files via OpenCV VideoCapture."""
+
+    def __init__(self, video_paths: list[Path], clip_len: int,
+                 frame_size: tuple[int, int], stride: int) -> None:
+        self._clip_len = clip_len
+        self._frame_size = frame_size
+        # (video_path, start_frame_index)
+        self._clips: list[tuple[Path, int]] = []
+
+        for vp in video_paths:
+            cap = cv2.VideoCapture(str(vp))
+            n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.release()
+            if n < clip_len:
+                continue
+            for start in range(0, n - clip_len + 1, stride):
+                self._clips.append((vp, start))
+
+    def __len__(self) -> int:
+        return len(self._clips)
+
+    def __getitem__(self, idx: int) -> np.ndarray:
+        vp, start = self._clips[idx]
+        cap = cv2.VideoCapture(str(vp))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+        w, h = self._frame_size
+        frames = []
+        for _ in range(self._clip_len):
+            ok, frame = cap.read()
+            if not ok:
+                break
+            frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append(frame.astype(np.float32) / 255.0)
+        cap.release()
+        arr = np.stack(frames, axis=0)       # (T, H, W, 3)
+        return arr.transpose(3, 0, 1, 2)     # (3, T, H, W)
+
+
+def _build_dataset(data_dir: Path) -> Dataset:
+    """Return the right dataset depending on whether data_dir has .avi files or frame dirs."""
+    entries = sorted(data_dir.iterdir())
+    if not entries:
+        raise FileNotFoundError(f"No files found in {data_dir}")
+
+    if entries[0].suffix.lower() == ".avi":
+        print(f"Detected .avi files — using VideoCapture loader ({len(entries)} videos)")
+        return _AviClipDataset(entries, clip_len=CLIP_LEN, frame_size=FRAME_SIZE, stride=STRIDE)
+    else:
+        print(f"Detected frame directories — using JPEG loader ({len(entries)} dirs)")
+        return NormalClipDataset(entries, clip_len=CLIP_LEN, frame_size=FRAME_SIZE, stride=STRIDE)
+
+
 def collate_fn(batch: list[np.ndarray]) -> torch.Tensor:
     return torch.from_numpy(np.stack(batch, axis=0))
 
@@ -39,18 +98,10 @@ def train(args: argparse.Namespace) -> None:
     out_path = Path(args.out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    video_dirs = sorted(data_dir.iterdir()) if data_dir.exists() else []
-    if not video_dirs:
-        raise FileNotFoundError(f"No video directories found in {data_dir}")
+    if not data_dir.exists():
+        raise FileNotFoundError(f"Data directory not found: {data_dir}")
 
-    print(f"Found {len(video_dirs)} video dirs")
-
-    dataset = NormalClipDataset(
-        video_dirs=video_dirs,
-        clip_len=CLIP_LEN,
-        frame_size=FRAME_SIZE,
-        stride=STRIDE,
-    )
+    dataset = _build_dataset(data_dir)
     print(f"Total clips: {len(dataset)}")
 
     val_size = max(1, int(0.1 * len(dataset)))
