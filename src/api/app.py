@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.schemas import (
     AlertAckRequest,
@@ -96,6 +97,17 @@ def _row_to_alert_record(row: sqlite3.Row) -> AlertRecord:
 
 def create_app(db_path: Path | None = None) -> FastAPI:
     app = FastAPI(title="Crowd Alert Service", version="0.1.0")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    from src.api.demo_router import router as demo_router
+    app.include_router(demo_router)
+
     resolved_db = db_path or Path("artifacts/alerts.db")
     app.state.db = _connect(resolved_db)
 

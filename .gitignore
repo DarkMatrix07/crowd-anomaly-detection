@@ -57,7 +57,8 @@ htmlcov/
 data/raw/
 data/interim/
 data/processed/
-# Demo data is committed to the repo (5 pre-selected clips)
+# Demo clips ARE committed (10 pre-selected clips, resized to 428x240)
+# data/demo_clips/ is intentionally tracked
 ShanghaiTech/
 shanghaitech_h5_empty/
 archive.zip
@@ -98,6 +99,13 @@ scripts/single_clip_demo.py
 # Tests (internal, not for client delivery)
 # =============================================================
 tests/
+
+# =============================================================
+# Next.js / web frontend
+# =============================================================
+web/.next/
+web/node_modules/
+web/*.tsbuildinfo
 
 # =============================================================
 # Misc internal files
