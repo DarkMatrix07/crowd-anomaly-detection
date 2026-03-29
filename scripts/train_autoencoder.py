@@ -3,35 +3,31 @@
 
 Usage
 -----
-    python scripts/train_autoencoder.py [--epochs 50] [--batch-size 2] [--lr 1e-3]
+    python scripts/train_autoencoder.py [--epochs 50] [--batch-size 4] [--lr 5e-4]
                                         [--data-dir data/raw/shanghaitech/shanghaitech/training/videos]
                                         [--out-path artifacts/models/autoencoder.pt]
                                         [--resume artifacts/models/autoencoder_checkpoint.pt]
+                                        [--noise-std 0.03]
 
-The data-dir may contain either:
-  - .avi video files  (ShanghaiTech training set layout)
-  - sub-directories of JPEG frames  (pre-extracted layout)
-
-Checkpoints
------------
-Every epoch a full checkpoint (model + optimizer + scheduler + epoch) is saved to
-<out-path stem>_checkpoint.pt  (e.g. autoencoder_checkpoint.pt).
-The best model weights-only file is still written to --out-path.
-
-To resume training on another machine:
-    python scripts/train_autoencoder.py --epochs 50 --resume artifacts/models/autoencoder_checkpoint.pt
+Key changes from prior versions
+-------------------------------
+- base_channels=16 with 4th encoder level → 48x compression bottleneck
+- Denoising autoencoder: Gaussian noise injected into encoder input
+- Random horizontal flip augmentation
+- ReduceLROnPlateau scheduler (patience=5) for stable convergence
+- Logs per-epoch MSE statistics for normal-data calibration
 """
 from __future__ import annotations
 
 import argparse
+import gc
+import random
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-import gc
 
 import cv2
 import numpy as np
@@ -48,7 +44,7 @@ _DEFAULT_OUT = Path("artifacts/models/autoencoder.pt")
 
 CLIP_LEN = 16
 FRAME_SIZE = (128, 128)
-STRIDE = 64
+STRIDE = 16          # denser clips than before (was 64) for more training data
 
 
 class _AviClipDataset(Dataset):
@@ -58,7 +54,6 @@ class _AviClipDataset(Dataset):
                  frame_size: tuple[int, int], stride: int) -> None:
         self._clip_len = clip_len
         self._frame_size = frame_size
-        # (video_path, start_frame_index)
         self._clips: list[tuple[Path, int]] = []
 
         for vp in video_paths:
@@ -85,14 +80,19 @@ class _AviClipDataset(Dataset):
             except cv2.error:
                 ok = False
             if not ok or frame is None:
-                # Pad with last good frame or zeros
                 frames.append(frames[-1] if frames else np.zeros((h, w, 3), dtype=np.float32))
                 continue
             frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frames.append(frame.astype(np.float32) / 255.0)
         cap.release()
+
         arr = np.stack(frames, axis=0)       # (T, H, W, 3)
+
+        # Random horizontal flip (data augmentation)
+        if random.random() < 0.5:
+            arr = arr[:, :, ::-1, :].copy()
+
         return arr.transpose(3, 0, 1, 2)     # (3, T, H, W)
 
 
@@ -128,7 +128,8 @@ def train(args: argparse.Namespace) -> None:
 
     val_size = max(1, int(0.1 * len(dataset)))
     train_size = len(dataset) - val_size
-    train_ds, val_ds = random_split(dataset, [train_size, val_size])
+    train_ds, val_ds = random_split(dataset, [train_size, val_size],
+                                     generator=torch.Generator().manual_seed(42))
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                               collate_fn=collate_fn, num_workers=0)
@@ -137,10 +138,17 @@ def train(args: argparse.Namespace) -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on {device}")
+    print(f"Noise std: {args.noise_std}")
+    print(f"Learning rate: {args.lr}")
 
-    model = Conv3DAutoencoder().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    model = Conv3DAutoencoder(base_channels=32).to(device)
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Model parameters: {total_params:,}")
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=5, verbose=True
+    )
 
     start_epoch = 1
     best_val_loss = float("inf")
@@ -158,12 +166,23 @@ def train(args: argparse.Namespace) -> None:
         best_val_loss = ckpt.get("best_val_loss", float("inf"))
         print(f"Resumed from epoch {ckpt['epoch']} (best val MSE so far: {best_val_loss:.6f})")
 
+    noise_std = args.noise_std
+
     for epoch in range(start_epoch, args.epochs + 1):
         model.train()
         train_losses = []
         for batch in tqdm(train_loader, desc=f"Epoch {epoch:03d}/{args.epochs} [train]", leave=False):
             batch = batch.to(device)
-            recon = model(batch)
+
+            # Denoising autoencoder: add Gaussian noise to input
+            if noise_std > 0:
+                noisy = batch + noise_std * torch.randn_like(batch)
+                noisy = noisy.clamp(0.0, 1.0)
+            else:
+                noisy = batch
+
+            recon = model(noisy)
+            # Reconstruct the CLEAN target, not the noisy input
             loss = F.mse_loss(recon, batch)
             optimizer.zero_grad()
             loss.backward()
@@ -175,13 +194,15 @@ def train(args: argparse.Namespace) -> None:
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=f"Epoch {epoch:03d}/{args.epochs} [val]", leave=False):
                 batch = batch.to(device)
+                # Validation: no noise, clean reconstruction
                 recon = model(batch)
                 val_losses.append(F.mse_loss(recon, batch).item())
 
         t_loss = np.mean(train_losses)
         v_loss = np.mean(val_losses)
-        print(f"Epoch {epoch:03d}/{args.epochs} | train_mse={t_loss:.6f} | val_mse={v_loss:.6f}")
-        scheduler.step()
+        current_lr = optimizer.param_groups[0]["lr"]
+        print(f"Epoch {epoch:03d}/{args.epochs} | train_mse={t_loss:.6f} | val_mse={v_loss:.6f} | lr={current_lr:.2e}")
+        scheduler.step(v_loss)
 
         if v_loss < best_val_loss:
             best_val_loss = v_loss
@@ -197,19 +218,23 @@ def train(args: argparse.Namespace) -> None:
             "best_val_loss": best_val_loss,
         }, checkpoint_path)
 
-        # Free memory between epochs to prevent OOM over long runs
+        # Free memory between epochs
         gc.collect()
         torch.cuda.empty_cache()
 
     print(f"\nTraining complete. Best val MSE: {best_val_loss:.6f}")
     print(f"Model saved to: {out_path}")
+    print(f"\nNOTE: After training, update _MSE_CAP in src/inference/cnn_anomaly_model.py")
+    print(f"      Set it to ~3x the best val MSE = {best_val_loss * 3:.6f}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train Conv3D autoencoder on normal videos")
     parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--lr", type=float, default=5e-4)
+    parser.add_argument("--noise-std", type=float, default=0.03,
+                        help="Gaussian noise std for denoising autoencoder (0 to disable)")
     parser.add_argument("--data-dir", type=str, default=str(_DEFAULT_DATA))
     parser.add_argument("--out-path", type=str, default=str(_DEFAULT_OUT))
     parser.add_argument("--resume", type=str, default=None,

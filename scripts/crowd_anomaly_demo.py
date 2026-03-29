@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.features.anomaly_features import _sorted_frame_paths, compute_frame_features
+from src.inference.resnet_mlp_model import load_resnet_mlp_model_fn
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -158,7 +159,25 @@ _RAW_MASKS   = PROJECT_ROOT / "data" / "raw" / "shanghaitech" / "shanghaitech" /
 if not (FRAMES_ROOT / "01_0130").exists() and (_RAW_FRAMES / "01_0130").exists():
     FRAMES_ROOT = _RAW_FRAMES
     MASKS_ROOT  = _RAW_MASKS
-MODEL_PATH   = PROJECT_ROOT / "artifacts" / "models" / "shanghaitech_windowed_rf.joblib"
+MODEL_PATH_RF  = PROJECT_ROOT / "artifacts" / "models" / "shanghaitech_windowed_rf.joblib"
+MODEL_PATH_DL  = PROJECT_ROOT / "artifacts" / "models" / "resnet_mlp.pt"
+
+MODEL_INFO = {
+    "Random Forest (W=30)": {
+        "path":          MODEL_PATH_RF,
+        "type":          "rf",
+        "thresh_medium": 0.50,
+        "thresh_high":   0.75,
+        "desc":          "**Type:** RandomForest · W=30 frames  \n**Features:** 40-d temporal window  \n**ROC-AUC:** 0.831 &nbsp;·&nbsp; **Recall:** 88.5%",
+    },
+    "ResNet18 + MLP  ★ best": {
+        "path":          MODEL_PATH_DL,
+        "type":          "dl",
+        "thresh_medium": 0.65,
+        "thresh_high":   0.85,
+        "desc":          "**Type:** ResNet18 (frozen) + MLP  \n**Features:** 2048-d ImageNet embeddings  \n**ROC-AUC:** 0.972 &nbsp;·&nbsp; **Accuracy:** 91.96%",
+    },
+}
 
 DEMO_CLIPS = {
     "01_0130  —  peaks at 0.997  ★ best demo":  "01_0130",
@@ -167,9 +186,6 @@ DEMO_CLIPS = {
     "01_0054  —  12-frame early warning":        "01_0054",
     "05_0018  —  normal clip (stays LOW)":       "05_0018",
 }
-
-THRESH_MEDIUM = 0.50
-THRESH_HIGH   = 0.75
 
 LEVEL_ICON  = {"LOW": "🟢", "MEDIUM": "🟡", "HIGH": "🔴"}
 
@@ -188,11 +204,16 @@ CHART_REFRESH = 5
 
 
 # ---------------------------------------------------------------------------
-# Model
+# Model loaders
 # ---------------------------------------------------------------------------
-@st.cache_resource(show_spinner="Loading anomaly model…")
-def get_model():
-    return joblib.load(MODEL_PATH)
+@st.cache_resource(show_spinner="Loading Random Forest model…")
+def get_rf_model():
+    return joblib.load(MODEL_PATH_RF)
+
+
+@st.cache_resource(show_spinner="Loading ResNet18 + MLP model…")
+def get_dl_model():
+    return load_resnet_mlp_model_fn(model_path=MODEL_PATH_DL)
 
 
 # ---------------------------------------------------------------------------
@@ -242,8 +263,8 @@ def frames_to_window_feat(frames: list[np.ndarray]) -> np.ndarray:
 
 
 def score_to_level(score: float) -> str:
-    if score >= THRESH_HIGH:   return "HIGH"
-    if score >= THRESH_MEDIUM: return "MEDIUM"
+    if score >= selected_model_cfg["thresh_high"]:   return "HIGH"
+    if score >= selected_model_cfg["thresh_medium"]: return "MEDIUM"
     return "LOW"
 
 
@@ -334,25 +355,30 @@ with st.sidebar:
         else:
             st.info("Upload an MP4, AVI, MOV, or MKV file to analyse.")
 
+    st.markdown("<div class='section-header'>Model</div>", unsafe_allow_html=True)
+    selected_model_name = st.selectbox(
+        "Anomaly Model",
+        list(MODEL_INFO.keys()),
+        label_visibility="collapsed",
+    )
+    selected_model_cfg = MODEL_INFO[selected_model_name]
+
     st.markdown("<div class='section-header'>Playback</div>", unsafe_allow_html=True)
     fps = st.slider("Speed (fps)", 1, 30, value=12)
     show_gt = (input_mode == "Demo Clips") and st.checkbox("Show ground-truth label", value=True)
 
     st.markdown("<div class='section-header'>Thresholds</div>", unsafe_allow_html=True)
+    _tm = selected_model_cfg["thresh_medium"]
+    _th = selected_model_cfg["thresh_high"]
     st.markdown(
-        f"🟢 &nbsp;**LOW** — score < {THRESH_MEDIUM}<br>"
-        f"🟡 &nbsp;**MEDIUM** — {THRESH_MEDIUM} to {THRESH_HIGH}<br>"
-        f"🔴 &nbsp;**HIGH** — score ≥ {THRESH_HIGH}",
+        f"🟢 &nbsp;**LOW** — score < {_tm}<br>"
+        f"🟡 &nbsp;**MEDIUM** — {_tm} to {_th}<br>"
+        f"🔴 &nbsp;**HIGH** — score ≥ {_th}",
         unsafe_allow_html=True,
     )
 
     st.markdown("<div class='section-header'>Model Info</div>", unsafe_allow_html=True)
-    st.markdown(
-        "**Type:** RandomForest · W=30 frames  \n"
-        "**Features:** 40-d temporal window  \n"
-        "**ROC-AUC:** 0.831 &nbsp;·&nbsp; **Recall:** 88.5%",
-        unsafe_allow_html=True,
-    )
+    st.markdown(selected_model_cfg["desc"], unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
 # Main layout
@@ -361,6 +387,7 @@ st.markdown("# Abnormal Crowd Behaviour Detection")
 _source_label = f"<code>{clip_id}</code>" if input_mode == "Demo Clips" else f"<code>{upload_name or 'no file'}</code>"
 st.markdown(
     f"<span style='color:#8b949e;font-size:0.9rem'>Source: {_source_label} &nbsp;·&nbsp; "
+    f"Model: <b>{selected_model_name}</b> &nbsp;·&nbsp; "
     f"Window: {WINDOW_SIZE} frames &nbsp;·&nbsp; Stride: {WINDOW_STRIDE} frames</span>",
     unsafe_allow_html=True,
 )
@@ -405,7 +432,18 @@ if not start:
 # ---------------------------------------------------------------------------
 # Load clip — unified for both demo clips and uploaded video
 # ---------------------------------------------------------------------------
-model   = get_model()
+_model_type = selected_model_cfg["type"]
+if _model_type == "rf":
+    _rf_model = get_rf_model()
+    def _score_window(frames: list[np.ndarray]) -> float:
+        feat = frames_to_window_feat(frames)
+        return float(_rf_model.predict_proba(feat)[0, 1])
+else:
+    _dl_fn = get_dl_model()
+    def _score_window(frames: list[np.ndarray]) -> float:
+        clip = np.stack(frames, axis=0)
+        return float(_dl_fn(clip))
+
 gt_mask = None
 
 if input_mode == "Demo Clips":
@@ -458,8 +496,7 @@ with st.spinner("Analysing clip… (this takes a few seconds)"):
         frame_buffer.append(frame)
 
         if len(frame_buffer) == WINDOW_SIZE and idx % WINDOW_STRIDE == 0:
-            feat       = frames_to_window_feat(list(frame_buffer))
-            last_score = float(model.predict_proba(feat)[0, 1])
+            last_score = _score_window(list(frame_buffer))
             level      = score_to_level(last_score)
             score_history.append({"frame": idx, "score": last_score})
 

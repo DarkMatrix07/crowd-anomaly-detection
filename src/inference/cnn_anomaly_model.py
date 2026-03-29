@@ -34,9 +34,10 @@ _DEFAULT_MODEL = Path(__file__).resolve().parents[2] / "artifacts" / "models" / 
 _CLIP_LEN = 16
 _FRAME_SIZE = (128, 128)   # (width, height) — must match training
 
-# Reconstruction error normalization: typical trained MSE range [0, ~0.05]
-# Scores above this cap are clipped to 1.0
-_MSE_CAP = 0.05
+# Reconstruction error normalization.
+# Set to ~3x the best validation MSE from training so that normal frames
+# score ~0.3 and anomalous frames score higher.  Update after retraining.
+_MSE_CAP = 0.005
 
 
 def _clip_to_tensor(clip: np.ndarray) -> torch.Tensor:

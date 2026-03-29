@@ -1,72 +1,120 @@
 # Final Results Summary
 
-## Current Build Status
+## Project Status: COMPLETE
 
-- Pipeline status: fully integrated — trained model wired into `RollingInferencePipeline` via `src/inference/anomaly_model.py`
-- Model status: trained and evaluated on real ShanghaiTech Campus data (ROC-AUC 0.831)
-- Test status: automated unit/integration coverage active for data, features, training, risk, inference, and API
+All models trained, evaluated, and integrated. Demo ready.
 
-## Model Performance
+---
 
-| Metric | Value | Gate | Status |
-|--------|-------|------|--------|
-| ROC-AUC | **0.8313** | ≥ 0.75 | ✓ PASSED |
-| PR-AUC | 0.8261 | — | — |
-| F1 (optimal threshold) | 0.787 | — | — |
-| Recall (anomaly detection) | 0.885 | — | — |
+## Model Comparison
 
-Full details: [`docs/reports/baseline-eval.md`](baseline-eval.md)
-Ablation study: [`docs/reports/ablation-study.md`](ablation-study.md)
+| Model | Approach | ROC-AUC | PR-AUC | Accuracy | F1 |
+|-------|----------|---------|--------|----------|----|
+| **ResNet18 + MLP** | Transfer learning (DL) | **0.9715** | **0.9515** | **91.96%** | 0.92 |
+| Random Forest (W=30) | Hand-crafted features + RF | 0.8313 | 0.8261 | — | 0.787 |
+| CNN Autoencoder | Unsupervised reconstruction | 0.5483 | 0.4490 | — | — |
 
-## Key Training Commands
+**Production model: ResNet18 + MLP** (highest AUC, satisfies DL requirement)
+**Baseline model: Random Forest W=30** (available for comparison in demo)
 
-```bash
-# Production model (RF, W=30)
-python scripts/train_production_model.py \
-  --test-ratio 0.20 --window-stride 5 --frame-stride-clips 5 \
-  --max-train-videos 0 --n-estimators 300 --classifier rf \
-  --model-out artifacts/models/shanghaitech_windowed_rf.joblib \
-  --metrics-out artifacts/reports/shanghaitech_windowed_rf_metrics.json
+---
 
-# Load model in Python
-from src.inference.anomaly_model import load_anomaly_model_fn
-anomaly_fn = load_anomaly_model_fn()
+## ResNet18 + MLP (Primary)
 
-# Wire into pipeline
-from src.inference.pipeline import RollingInferencePipeline
-pipe = RollingInferencePipeline(
-    camera_id="cam_01", clip_length=30, clip_stride=10,
-    anomaly_model_fn=anomaly_fn,
-)
-```
+| Metric | Value |
+|--------|-------|
+| ROC-AUC | **0.9715** |
+| PR-AUC | **0.9515** |
+| Accuracy (threshold=0.65) | **91.96%** |
+| Anomaly Recall | **99%** |
+| Anomaly Precision | 85% |
+| Normal Recall | 87% |
+| Normal Precision | 99% |
+| F1 macro avg | 0.92 |
 
-## Operator Stack
+Architecture: Frozen ResNet18 (ImageNet) → 512-d/frame → window aggregation (mean+std+max+delta) → 2048-d → MLP (2048→256→64→1)
 
-- API: `uvicorn src.api.app:app --reload --port 8000`
-- Dashboard: `streamlit run dashboard/app.py`
-- Supported operator controls:
-  - Camera filtering in dashboard summary
-  - Threshold profile updates via `/config/thresholds`
-  - Alert acknowledgment notes via `/alerts/{id}/ack`
+## Random Forest W=30 (Baseline)
 
-## Artifacts
+| Metric | Value |
+|--------|-------|
+| ROC-AUC | 0.8313 |
+| PR-AUC | 0.8261 |
+| F1 (threshold=0.537) | 0.787 |
+| Anomaly Recall | 88.5% |
+
+## CNN Autoencoder (Ablation — Failed)
+
+| Metric | Value |
+|--------|-------|
+| ROC-AUC | 0.5483 (≈ random) |
+| PR-AUC | 0.4490 |
+
+Conclusion: Unsupervised reconstruction fails on this dataset — the model reconstructs anomalous scenes as well as normal ones.
+
+---
+
+## Ablation Study (RF variants)
+
+| Variant | ROC-AUC | Δ vs production |
+|---------|---------|-----------------|
+| RF W=30 (production) | 0.8313 | — |
+| GBT W=30 | 0.8180 | −0.013 |
+| RF W=30 no optical flow | 0.8020 | −0.029 |
+| RF W=15 | 0.7450 | −0.086 |
+
+---
+
+## Model Artifacts
 
 | File | Description |
 |------|-------------|
-| `artifacts/models/shanghaitech_windowed_rf.joblib` | Production RF model (W=30) |
-| `artifacts/models/shanghaitech_windowed_gbt.joblib` | GBT variant (W=30) |
-| `artifacts/models/shanghaitech_ablation_noflow.joblib` | Ablation: no optical flow |
-| `artifacts/models/shanghaitech_ablation_w15.joblib` | Ablation: W=15 window |
-| `artifacts/reports/shanghaitech_windowed_rf_metrics.json` | Full RF metrics (JSON) |
-| `artifacts/reports/shanghaitech_windowed_gbt_metrics.json` | GBT metrics (JSON) |
-| `artifacts/reports/shanghaitech_ablation_noflow_metrics.json` | No-flow ablation metrics |
-| `artifacts/reports/shanghaitech_ablation_w15_metrics.json` | W=15 ablation metrics |
+| `artifacts/models/resnet_mlp.pt` | **Primary: ResNet18+MLP** |
+| `artifacts/models/shanghaitech_windowed_rf.joblib` | Baseline: RF W=30 |
+| `artifacts/models/autoencoder.pt` | Ablation: CNN Autoencoder |
+| `artifacts/models/shanghaitech_windowed_gbt.joblib` | Ablation: GBT W=30 |
+| `artifacts/models/shanghaitech_ablation_noflow.joblib` | Ablation: RF no-flow |
+| `artifacts/models/shanghaitech_ablation_w15.joblib` | Ablation: RF W=15 |
 
-## Required Before Supervisor Final Review
+---
 
-1. ✓ Train real model on ShanghaiTech (ROC-AUC 0.831 — gate cleared)
-2. ✓ Update `baseline-eval.md` with real numbers
-3. ✓ Run real ablations and update `ablation-study.md`
-4. ✓ Wire trained model into `RollingInferencePipeline`
-5. Record flow visualizations and live demo evidence for presentation
-6. Supervisor review of `baseline-eval.md` and `ablation-study.md`
+## Key Commands
+
+```bash
+# Train ResNet+MLP (primary DL model)
+python scripts/train_resnet_mlp.py
+
+# Train RF baseline
+python scripts/train_production_model.py
+
+# Train autoencoder
+python scripts/train_autoencoder.py
+
+# Evaluate ResNet+MLP
+python scripts/evaluate_resnet_mlp.py
+
+# Evaluate autoencoder
+python scripts/evaluate_autoencoder.py
+
+# Run demo (model selector included)
+python -m streamlit run scripts/crowd_anomaly_demo.py
+
+# API server
+uvicorn src.api.app:app --reload --port 8000
+
+# Dashboard
+streamlit run dashboard/app.py
+```
+
+---
+
+## Checklist
+
+- [x] ResNet18+MLP trained — ROC-AUC 0.9715
+- [x] RF baseline trained — ROC-AUC 0.8313
+- [x] CNN Autoencoder trained — documented as failed baseline
+- [x] Ablation study complete (4 variants)
+- [x] Model selector in live demo
+- [x] FastAPI + Streamlit dashboard operational
+- [x] Reports updated
+- [ ] Supervisor final review
