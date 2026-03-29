@@ -11,7 +11,7 @@ Early-warning system for detecting abnormal crowd behaviour in surveillance foot
 | Model | Approach | ROC-AUC | Accuracy |
 |-------|----------|---------|----------|
 | **ResNet18 + MLP** | Transfer learning (DL) | **0.9715** | **91.96%** |
-| Random Forest (W=30) | Hand-crafted features | 0.8313 | — |
+| Random Forest (W=30) | Hand-crafted features | 0.8313 | 76.1% |
 
 Production model: **ResNet18 + MLP** (satisfies DL requirement, highest performance)
 
